@@ -1,0 +1,73 @@
+name: Build
+
+on: [push]
+
+jobs:
+  native:
+    strategy:
+      matrix:
+        version:
+          - 1.46.0
+          - stable
+          - beta
+          - nightly
+        os:
+          - macos-latest
+          - ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: ${{ matrix.version }}
+        override: true
+        profile: minimal
+    - name: Run tests
+      shell: bash
+      run: cargo test --verbose
+
+
+  cross:
+    strategy:
+      matrix:
+        target:
+        - aarch64-linux-android
+        os:
+        - ubuntu-latest
+        include:
+        - target: aarch64-apple-ios
+          os: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install cross
+      run: cargo install cross
+    - name: Run tests
+      run: |
+        cross +nightly test --target ${{ matrix.target }}
+
+
+  cross-build-only:
+    strategy:
+      matrix:
+        target:
+        - x86_64-sun-solaris
+        - x86_64-unknown-dragonfly
+        - x86_64-unknown-netbsd
+        os:
+        - ubuntu-latest
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install cross
+      run: cargo install cross
+    - name: Run tests
+      run: |
+        cross +nightly build --target ${{ matrix.target }}
