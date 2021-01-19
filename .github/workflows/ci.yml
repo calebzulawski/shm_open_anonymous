@@ -37,7 +37,7 @@ jobs:
         - aarch64-linux-android
         os:
         - ubuntu-latest
-        include:
+        #include:
         #- target: aarch64-apple-ios
         #  os: macos-latest
 

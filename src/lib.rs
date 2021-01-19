@@ -1,6 +1,6 @@
 //! Create anonymous POSIX shared memory objects.
 //!
-//! This crate is `no_std` compatible.
+//! This crate is only works on `unix` targets and is `no_std` compatible.
 #![cfg(unix)]
 #![no_std]
 // Inspired by https://github.com/lassik/shm_open_anon (ISC license, Copyright 2019 Lassi Kortela)
