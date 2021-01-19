@@ -7,8 +7,10 @@
 
 use libc::c_int;
 
-#[cfg(not(target_os = "freebsd"))]
+#[cfg(not(any(target_os = "freebsd", target_os = "android")))]
 fn errno() -> c_int {
+    #[cfg(any(target_os = "solaris", target_os = "illumos"))]
+    use libc::___errno as errno_location;
     #[cfg(any(target_os = "android", target_os = "netbsd", target_os = "openbsd"))]
     use libc::__errno as errno_location;
     #[cfg(any(target_os = "linux", target_os = "redox", target_os = "dragonfly"))]
@@ -19,7 +21,7 @@ fn errno() -> c_int {
     unsafe { *errno_location() as c_int }
 }
 
-#[cfg(not(target_os = "freebsd"))]
+#[cfg(not(any(target_os = "freebsd", target_os = "android")))]
 fn shm_open_anonymous_posix() -> c_int {
     use libc::c_char;
 
@@ -71,6 +73,20 @@ fn shm_open_anonymous_posix() -> c_int {
     core::unreachable!()
 }
 
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn memfd_create() -> c_int {
+    static PATH: &'static str = "shm_open_anonymous\0";
+    // PATH is a valid string
+    let fd = unsafe {
+        libc::syscall(
+            libc::SYS_memfd_create,
+            PATH.as_ptr() as *const libc::c_char,
+            libc::MFD_CLOEXEC,
+        )
+    };
+    fd as c_int
+}
+
 /// Creates an anonymous POSIX shared memory object.
 ///
 /// On success, returns a new file descriptor as if by `shm_open`.
@@ -83,21 +99,8 @@ fn shm_open_anonymous_posix() -> c_int {
 pub fn shm_open_anonymous() -> c_int {
     #[cfg(target_os = "linux")]
     {
-        fn memfd_create() -> c_int {
-            static PATH: &'static str = "shm_open_anonymous\0";
-            // PATH is a valid string
-            let fd = unsafe {
-                libc::syscall(
-                    libc::SYS_memfd_create,
-                    PATH.as_ptr() as *const libc::c_char,
-                    libc::MFD_CLOEXEC,
-                )
-            };
-            fd as c_int
-        }
-
         // Try opening with memfd_create.
-        // If that fails, use the generic POSIX method.
+        // If that fails (because of an older kernel) use the generic POSIX method.
         let fd = memfd_create();
         if fd == -1 {
             if errno() == libc::ENOSYS {
@@ -110,13 +113,18 @@ pub fn shm_open_anonymous() -> c_int {
         }
     }
 
+    #[cfg(target_os = "android")]
+    {
+        memfd_create()
+    }
+
     #[cfg(target_os = "freebsd")]
     {
         // no invariants to uphold
         unsafe { libc::shm_open(libc::SHM_ANON, libc::O_RDWR, 0) }
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "freebsd")))]
+    #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "freebsd")))]
     shm_open_anonymous_posix()
 }
 
