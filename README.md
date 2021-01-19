@@ -1,7 +1,7 @@
 shm_open_anonymous
 ==================
 [![Build Status](https://github.com/calebzulawski/shm_open_anonymous/workflows/Build/badge.svg?branch=master)](https://github.com/calebzulawski/shm_open_anonymous/actions)
-![Rustc Version 1.47+](https://img.shields.io/badge/rustc-1.47+-lightgray.svg)
+![Rustc Version 1.31+](https://img.shields.io/badge/rustc-1.31+-lightgray.svg)
 [![License](https://img.shields.io/crates/l/shm_open_anonymous)](https://crates.io/crates/shm_open_anonymous)
 [![Crates.io](https://img.shields.io/crates/v/shm_open_anonymous)](https://crates.io/crates/shm_open_anonymous)
 [![Rust Documentation](https://img.shields.io/badge/api-rustdoc-blue.svg)](https://docs.rs/shm_open_anonymous)
