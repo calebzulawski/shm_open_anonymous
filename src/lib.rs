@@ -87,6 +87,28 @@ fn memfd_create() -> c_int {
     fd as c_int
 }
 
+#[cfg(target_os = "linux")]
+fn memfd_create_fallback_posix() -> c_int {
+    // Try opening with memfd_create.
+    // If that fails (because of an older kernel) use the generic POSIX method.
+    let fd = memfd_create();
+    if fd == -1 {
+        if errno() == libc::ENOSYS {
+            shm_open_anonymous_posix()
+        } else {
+            -1
+        }
+    } else {
+        fd
+    }
+}
+
+#[cfg(target_os = "freebsd")]
+fn shm_open_shm_anon() -> c_int {
+    // no invariants to uphold
+    unsafe { libc::shm_open(libc::SHM_ANON, libc::O_RDWR, 0) }
+}
+
 /// Creates an anonymous POSIX shared memory object.
 ///
 /// On success, returns a new file descriptor as if by `shm_open`.
@@ -98,34 +120,16 @@ fn memfd_create() -> c_int {
 /// the memory object, or it may use a generic POSIX implementation.
 pub fn shm_open_anonymous() -> c_int {
     #[cfg(target_os = "linux")]
-    {
-        // Try opening with memfd_create.
-        // If that fails (because of an older kernel) use the generic POSIX method.
-        let fd = memfd_create();
-        if fd == -1 {
-            if errno() == libc::ENOSYS {
-                shm_open_anonymous_posix()
-            } else {
-                -1
-            }
-        } else {
-            fd
-        }
-    }
+    return memfd_create_fallback_posix();
 
     #[cfg(target_os = "android")]
-    {
-        memfd_create()
-    }
+    return memfd_create();
 
     #[cfg(target_os = "freebsd")]
-    {
-        // no invariants to uphold
-        unsafe { libc::shm_open(libc::SHM_ANON, libc::O_RDWR, 0) }
-    }
+    return shm_open_shm_anon();
 
     #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "freebsd")))]
-    shm_open_anonymous_posix()
+    return shm_open_anonymous_posix();
 }
 
 #[cfg(test)]
