@@ -38,8 +38,8 @@ jobs:
         os:
         - ubuntu-latest
         include:
-        - target: aarch64-apple-ios
-          os: macos-latest
+        #- target: aarch64-apple-ios
+        #  os: macos-latest
 
     runs-on: ${{ matrix.os }}
 
@@ -57,8 +57,9 @@ jobs:
       matrix:
         target:
         - x86_64-sun-solaris
-        - x86_64-unknown-dragonfly
         - x86_64-unknown-netbsd
+        #- x86_64-unknown-dragonfly
+        #- x86_64-unknown-freebsd
         os:
         - ubuntu-latest
 
