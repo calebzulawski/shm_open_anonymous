@@ -1,83 +1,74 @@
 //! Create anonymous POSIX shared memory objects.
+//!
+//! This crate is `no_std` compatible.
 #![cfg(unix)]
+#![no_std]
 // Inspired by https://github.com/lassik/shm_open_anon (ISC license, Copyright 2019 Lassi Kortela)
 
 use libc::c_int;
-use std::ffi::CStr;
-use std::os::unix::io::RawFd;
 
-#[cfg(any(target_os = "android", target_os = "netbsd", target_os = "openbsd"))]
-use libc::__errno as errno_location;
-#[cfg(any(target_os = "linux", target_os = "redox", target_os = "dragonfly"))]
-use libc::__errno_location as errno_location;
-#[cfg(any(target_os = "freebsd", target_os = "ios", target_os = "macos"))]
-use libc::__error as errno_location;
-
+#[cfg(not(target_os = "freebsd"))]
 fn errno() -> c_int {
+    #[cfg(any(target_os = "android", target_os = "netbsd", target_os = "openbsd"))]
+    use libc::__errno as errno_location;
+    #[cfg(any(target_os = "linux", target_os = "redox", target_os = "dragonfly"))]
+    use libc::__errno_location as errno_location;
+    #[cfg(any(target_os = "freebsd", target_os = "ios", target_os = "macos"))]
+    use libc::__error as errno_location;
+
     unsafe { *errno_location() as c_int }
 }
 
-fn shm_unlink(path: &CStr) -> c_int {
-    // CStr ensures `path` is safe.
-    unsafe { libc::shm_unlink(path.as_ptr()) }
-}
-
 #[cfg(not(target_os = "freebsd"))]
-fn shm_open_anonymous_posix() -> RawFd {
-    fn shm_open_path(path: &CStr) -> c_int {
-        // CStr ensures `path` is safe.
-        unsafe {
-            libc::shm_open(
-                path.as_ptr(),
-                libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
-                0o600,
-            )
-        }
-    }
-
-    fn pseudorandom() -> Option<i64> {
-        // `time` is initialized if clock_gettime doesn't return -1
-        unsafe {
-            let mut time: std::mem::MaybeUninit<libc::timespec> = std::mem::MaybeUninit::uninit();
-            if libc::clock_gettime(libc::CLOCK_REALTIME, time.as_mut_ptr()) == -1 {
-                return None;
-            }
-            Some(time.assume_init().tv_nsec)
-        }
-    }
+fn shm_open_anonymous_posix() -> c_int {
+    use libc::c_char;
 
     let mut filename = *b"/shm_open_anonymous-XXXX\0";
-    loop {
-        let path = {
-            use std::io::Write;
+    const OFFSET: usize = 20;
+    assert_eq!(&filename[OFFSET..], b"XXXX\0");
 
-            // replace the last four characters with "random" digits
-            if let Some(random) = pseudorandom() {
-                write!(&mut filename[20..], "{:4}", random % 10000).unwrap();
-                std::ffi::CStr::from_bytes_with_nul(filename.as_ref()).unwrap()
-            } else {
-                return -1;
-            }
+    for i in (0..10000u16).cycle() {
+        let path = {
+            // replace the last four characters with the value `i`
+            let digits = [
+                b'0' + (i / 1000) as u8,
+                b'0' + (i / 100 % 10) as u8,
+                b'0' + (i / 10 % 10) as u8,
+                b'0' + (i % 10) as u8,
+            ];
+            debug_assert!(digits.iter().all(|x| *x >= b'0' && *x <= b'9'));
+            filename[OFFSET..OFFSET + 4].copy_from_slice(&digits);
+            filename.as_ptr() as *const c_char
         };
 
-        debug_assert!(path.to_str().unwrap().starts_with("/shm_open_anonymous-"));
+        debug_assert!(filename.starts_with(b"/shm_open_anonymous-"));
+        debug_assert!(filename.ends_with(b"\0"));
 
         // Try creating shared memory with the provided path.
         // If creation fails with EEXIST, try another filename until it works.
-        let fd = shm_open_path(&path);
+
+        // Safety: path points to a null-terminated string
+        let fd = unsafe {
+            libc::shm_open(
+                path,
+                libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
+                0o600,
+            )
+        };
         if fd == -1 && errno() != libc::EEXIST {
             return -1;
         } else if fd != -1 {
-            if shm_unlink(path) == -1 {
-                // fd is valid
-                unsafe {
+            // Safety: path points to a null-terminated string and fd is valid
+            unsafe {
+                if libc::shm_unlink(path) == -1 {
                     libc::close(fd);
+                    return -1;
                 }
-                return -1;
             }
             return fd;
         }
     }
+    core::unreachable!()
 }
 
 /// Creates an anonymous POSIX shared memory object.
@@ -89,7 +80,7 @@ fn shm_open_anonymous_posix() -> RawFd {
 ///
 /// Depending on operating system, this function may use an OS-specific system call for creating
 /// the memory object, or it may use a generic POSIX implementation.
-pub fn shm_open_anonymous() -> RawFd {
+pub fn shm_open_anonymous() -> c_int {
     #[cfg(target_os = "linux")]
     {
         fn memfd_create() -> c_int {

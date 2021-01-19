@@ -7,7 +7,7 @@ description = "Anonymous POSIX shared memory objects"
 repository = "https://github.com/calebzulawski/shm_open_anonymous"
 license = "MIT OR Apache-2.0"
 keywords = ["shm_open", "memfd_create", "shm_anon"]
-categories = ["memory-management", "os"]
+categories = ["memory-management", "os", "no-std"]
 
 [dependencies]
-libc = "0.2"
+libc = { version = "0.2", default-features = false }
