@@ -29,22 +29,10 @@ fn shm_open_anonymous_posix() -> c_int {
     const OFFSET: usize = 20;
     assert_eq!(&filename[OFFSET..], b"XXXX\0");
 
-    for i in (0..10000u16).cycle() {
-        let path = {
-            // replace the last four characters with the value `i`
-            let digits = [
-                b'0' + (i / 1000) as u8,
-                b'0' + (i / 100 % 10) as u8,
-                b'0' + (i / 10 % 10) as u8,
-                b'0' + (i % 10) as u8,
-            ];
-            debug_assert!(digits.iter().all(|x| *x >= b'0' && *x <= b'9'));
-            filename[OFFSET..OFFSET + 4].copy_from_slice(&digits);
-            filename.as_ptr() as *const c_char
-        };
-
+    loop {
+        let path = filename.as_ptr() as *const c_char;
         debug_assert!(filename.starts_with(b"/shm_open_anonymous-"));
-        debug_assert!(filename.ends_with(b"\0"));
+        assert!(filename.ends_with(b"\0"));
 
         // Try creating shared memory with the provided path.
         // If creation fails with EEXIST, try another filename until it works.
@@ -69,8 +57,25 @@ fn shm_open_anonymous_posix() -> c_int {
             }
             return fd;
         }
+
+        // If we didn't return, the filename was taken (contention) so try another.
+        // Safety: timespec is initialized by clock_gettime
+        let pseudorandom = unsafe {
+            let mut timespec = core::mem::MaybeUninit::uninit();
+            if libc::clock_gettime(libc::CLOCK_REALTIME, timespec.as_mut_ptr()) != 0 {
+                return -1;
+            }
+            timespec.assume_init().tv_nsec % 10000
+        };
+        let digits = [
+            b'0' + (pseudorandom / 1000 % 10) as u8,
+            b'0' + (pseudorandom / 100 % 10) as u8,
+            b'0' + (pseudorandom / 10 % 10) as u8,
+            b'0' + (pseudorandom % 10) as u8,
+        ];
+        debug_assert!(digits.iter().all(|x| *x >= b'0' && *x <= b'9'));
+        filename[OFFSET..OFFSET + 4].copy_from_slice(&digits);
     }
-    core::unreachable!()
 }
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
