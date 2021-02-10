@@ -145,4 +145,31 @@ mod test {
         assert!(fd != -1);
         assert!(unsafe { libc::close(fd) } != -1);
     }
+
+    #[cfg(not(any(target_os = "freebsd", target_os = "android")))]
+    #[test]
+    fn shm_open_anonymous_posix() {
+        let fd = super::shm_open_anonymous_posix();
+        assert!(fd != -1);
+        assert!(unsafe { libc::close(fd) } != -1);
+    }
+
+    #[cfg(not(any(target_os = "freebsd", target_os = "android")))]
+    #[test]
+    fn shm_open_anonymous_posix_contention() {
+        let taken_fd = unsafe {
+            libc::shm_open(
+                b"/shm_open_anonymous-XXXX\0".as_ptr() as *const libc::c_char,
+                libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
+                0o600,
+            )
+        };
+        assert!(taken_fd != -1);
+        let fd = super::shm_open_anonymous_posix();
+        unsafe {
+            libc::close(taken_fd);
+        }
+        assert!(fd != -1);
+        assert!(unsafe { libc::close(fd) } != -1);
+    }
 }
