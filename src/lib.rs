@@ -1,6 +1,6 @@
 //! Create anonymous POSIX shared memory objects.
 //!
-//! This crate is only works on `unix` targets and is `no_std` compatible.
+//! This crate only works on `unix` targets and is `no_std` compatible.
 #![cfg(unix)]
 #![no_std]
 // Inspired by https://github.com/lassik/shm_open_anon (ISC license, Copyright 2019 Lassi Kortela)
@@ -80,7 +80,7 @@ fn shm_open_anonymous_posix() -> c_int {
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn memfd_create() -> c_int {
-    static PATH: &'static str = "shm_open_anonymous\0";
+    static PATH: &str = "shm_open_anonymous\0";
     // PATH is a valid string
     let fd = unsafe {
         libc::syscall(
@@ -157,17 +157,24 @@ mod test {
     #[cfg(not(any(target_os = "freebsd", target_os = "android")))]
     #[test]
     fn shm_open_anonymous_posix_contention() {
+        const PATH: &[u8] = b"/shm_open_anonymous-XXXX\0";
+
         let taken_fd = unsafe {
             libc::shm_open(
-                b"/shm_open_anonymous-XXXX\0".as_ptr() as *const libc::c_char,
+                PATH.as_ptr() as *const libc::c_char,
                 libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
                 0o600,
             )
         };
-        assert!(taken_fd != -1);
+        // Another test or an interrupted run may already own this name. Either
+        // way, the contention path is ready to exercise.
+        assert!(taken_fd != -1 || super::errno() == libc::EEXIST);
         let fd = super::shm_open_anonymous_posix();
-        unsafe {
-            libc::close(taken_fd);
+        if taken_fd != -1 {
+            unsafe {
+                libc::shm_unlink(PATH.as_ptr() as *const libc::c_char);
+                libc::close(taken_fd);
+            }
         }
         assert!(fd != -1);
         assert!(unsafe { libc::close(fd) } != -1);
