@@ -29,6 +29,13 @@ fn shm_open_anonymous_posix() -> c_int {
     const OFFSET: usize = 20;
     assert_eq!(&filename[OFFSET..], b"XXXX\0");
 
+    // Apple's shm_open is not a path-based filesystem call, so it rejects
+    // O_NOFOLLOW with EINVAL.
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    const OFLAGS: c_int = libc::O_RDWR | libc::O_CREAT | libc::O_EXCL;
+    #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+    const OFLAGS: c_int = libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW;
+
     loop {
         let path = filename.as_ptr() as *const c_char;
         debug_assert!(filename.starts_with(b"/shm_open_anonymous-"));
@@ -38,13 +45,7 @@ fn shm_open_anonymous_posix() -> c_int {
         // If creation fails with EEXIST, try another filename until it works.
 
         // Safety: path points to a null-terminated string
-        let fd = unsafe {
-            libc::shm_open(
-                path,
-                libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
-                0o600,
-            )
-        };
+        let fd = unsafe { libc::shm_open(path, OFLAGS, 0o600) };
         if fd == -1 && errno() != libc::EEXIST {
             return -1;
         } else if fd != -1 {
@@ -159,13 +160,14 @@ mod test {
     fn shm_open_anonymous_posix_contention() {
         const PATH: &[u8] = b"/shm_open_anonymous-XXXX\0";
 
-        let taken_fd = unsafe {
-            libc::shm_open(
-                PATH.as_ptr() as *const libc::c_char,
-                libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW,
-                0o600,
-            )
-        };
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
+        const OFLAGS: libc::c_int = libc::O_RDWR | libc::O_CREAT | libc::O_EXCL;
+        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+        const OFLAGS: libc::c_int =
+            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_NOFOLLOW;
+
+        let taken_fd =
+            unsafe { libc::shm_open(PATH.as_ptr() as *const libc::c_char, OFLAGS, 0o600) };
         // Another test or an interrupted run may already own this name. Either
         // way, the contention path is ready to exercise.
         assert!(taken_fd != -1 || super::errno() == libc::EEXIST);
